@@ -21,7 +21,7 @@ func main() {
 		fmt.Println("PNG PE Embedding Tool")
 		fmt.Println()
 		fmt.Println("Usage:")
-		fmt.Printf("  %s -i <image.png> -pe <payload.exe> -o <output.png>\n", os.Args[0])
+		fmt.Printf("  %s -i <image.png> -pe <payload> -o <output.png>\n", os.Args[0])
 		fmt.Println()
 		fmt.Println("Flags:")
 		flag.PrintDefaults()
