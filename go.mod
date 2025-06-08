@@ -1,14 +1,17 @@
 module shellcode-stego
 
-go 1.24.3
+go 1.23.0
+
+toolchain go1.23.10
 
 require (
 	github.com/bogem/id3v2 v1.2.0
+	github.com/carved4/go-direct-syscall v1.1.0
 	github.com/pdfcpu/pdfcpu v0.11.0
-	golang.org/x/sys v0.33.0
 )
 
 require (
+	github.com/Binject/debug v0.0.0-20230508195519-26db73212a7a // indirect
 	github.com/hhrutter/lzw v1.0.0 // indirect
 	github.com/hhrutter/pkcs7 v0.2.0 // indirect
 	github.com/hhrutter/tiff v1.0.2 // indirect

