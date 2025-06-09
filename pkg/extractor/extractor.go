@@ -14,13 +14,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/bogem/id3v2" 
-	"github.com/pdfcpu/pdfcpu/pkg/api" 
+	"github.com/bogem/id3v2"
+	"github.com/pdfcpu/pdfcpu/pkg/api"
 )
 
-
 var magicHeader = []byte{0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE}
-
 
 type Format int
 
@@ -30,7 +28,6 @@ const (
 	FormatMP3
 	FormatPDF
 )
-
 
 func ExtractPEFromFile(filePath string) ([]byte, error) {
 	file, err := os.Open(filePath)
@@ -62,7 +59,6 @@ func ExtractPEFromFile(filePath string) ([]byte, error) {
 	}
 }
 
-
 func ExtractPEFromBytes(fileData []byte) ([]byte, error) {
 	format, err := detectFormat(fileData, "")
 	if err != nil {
@@ -81,7 +77,7 @@ func ExtractPEFromBytes(fileData []byte) ([]byte, error) {
 		if _, err := tmpFile.Write(fileData); err != nil {
 			return nil, fmt.Errorf("failed to write to temporary file: %v", err)
 		}
-		tmpFile.Close() 
+		tmpFile.Close()
 
 		return ExtractPEFromImage(tmpFile.Name())
 	case FormatMP3:
@@ -95,7 +91,7 @@ func ExtractPEFromBytes(fileData []byte) ([]byte, error) {
 		if _, err := tmpFile.Write(fileData); err != nil {
 			return nil, fmt.Errorf("failed to write to temporary file: %v", err)
 		}
-		tmpFile.Close() 
+		tmpFile.Close()
 
 		return ExtractPEFromMP3(tmpFile.Name())
 	case FormatPDF:
@@ -109,14 +105,13 @@ func ExtractPEFromBytes(fileData []byte) ([]byte, error) {
 		if _, err := tmpFile.Write(fileData); err != nil {
 			return nil, fmt.Errorf("failed to write to temporary file: %v", err)
 		}
-		tmpFile.Close() 
+		tmpFile.Close()
 
 		return ExtractPEFromPDF(tmpFile.Name())
 	default:
 		return nil, fmt.Errorf("unsupported file format")
 	}
 }
-
 
 func ExtractPEFromReader(imgReader io.Reader, format Format) ([]byte, error) {
 	// Decode the image
@@ -139,7 +134,6 @@ func ExtractPEFromReader(imgReader io.Reader, format Format) ([]byte, error) {
 	bounds := img.Bounds()
 	width, height := bounds.Max.X, bounds.Max.Y
 
-
 	rgbaImg := image.NewRGBA(bounds)
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
@@ -147,13 +141,11 @@ func ExtractPEFromReader(imgReader io.Reader, format Format) ([]byte, error) {
 		}
 	}
 
-
 	var extractedBits []uint8
 
 	for y := 0; y < height; y++ {
 		for x := 0; x < width; x++ {
 			pixel := rgbaImg.RGBAAt(x, y)
-
 
 			channels := []uint8{pixel.R, pixel.G, pixel.B}
 
@@ -164,7 +156,6 @@ func ExtractPEFromReader(imgReader io.Reader, format Format) ([]byte, error) {
 			}
 		}
 	}
-
 
 	var extractedBytes []byte
 	for i := 0; i < len(extractedBits); i += 8 {
@@ -179,7 +170,6 @@ func ExtractPEFromReader(imgReader io.Reader, format Format) ([]byte, error) {
 		extractedBytes = append(extractedBytes, b)
 	}
 
-
 	if len(extractedBytes) < len(magicHeader)+4 {
 		return nil, fmt.Errorf("insufficient data extracted - no PE found")
 	}
@@ -190,21 +180,18 @@ func ExtractPEFromReader(imgReader io.Reader, format Format) ([]byte, error) {
 		return nil, fmt.Errorf("magic header not found - no embedded PE data")
 	}
 
-
-	sizeBytes := extractedBytes[len(magicHeader):len(magicHeader)+4]
+	sizeBytes := extractedBytes[len(magicHeader) : len(magicHeader)+4]
 	peSize := binary.LittleEndian.Uint32(sizeBytes)
-
 
 	dataStart := len(magicHeader) + 4
 	if len(extractedBytes) < dataStart+int(peSize) {
 		return nil, fmt.Errorf("insufficient PE data extracted")
 	}
 
-	peBytes := extractedBytes[dataStart:dataStart+int(peSize)]
+	peBytes := extractedBytes[dataStart : dataStart+int(peSize)]
 
 	return peBytes, nil
 }
-
 
 func ExtractPEFromImage(imagePath string) ([]byte, error) {
 
@@ -217,7 +204,6 @@ func ExtractPEFromImage(imagePath string) ([]byte, error) {
 	return ExtractPEFromReader(imgFile, FormatPNG)
 }
 
-
 func ExtractPEFromPDF(pdfPath string) ([]byte, error) {
 
 	file, err := os.Open(pdfPath)
@@ -225,7 +211,6 @@ func ExtractPEFromPDF(pdfPath string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to open PDF file: %v", err)
 	}
 	defer file.Close()
-
 
 	properties, err := api.Properties(file, nil)
 	if err != nil {
@@ -237,24 +222,21 @@ func ExtractPEFromPDF(pdfPath string) ([]byte, error) {
 		return nil, fmt.Errorf("no embedded data found in PDF metadata")
 	}
 
-
 	dataBytes, err := base64.StdEncoding.DecodeString(base64Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode base64 data: %v", err)
 	}
 
-
 	if len(dataBytes) < len(magicHeader)+4 || !bytes.Equal(dataBytes[:len(magicHeader)], magicHeader) {
 		return nil, fmt.Errorf("invalid magic header in embedded data")
 	}
-
 
 	if len(dataBytes) < len(magicHeader)+4 {
 		return nil, fmt.Errorf("embedded data too short to contain size")
 	}
 
-	peSize := binary.LittleEndian.Uint32(dataBytes[len(magicHeader):len(magicHeader)+4])
-s
+	peSize := binary.LittleEndian.Uint32(dataBytes[len(magicHeader) : len(magicHeader)+4])
+
 	if len(dataBytes) < len(magicHeader)+4+int(peSize) {
 		return nil, fmt.Errorf("embedded data truncated, expected %d bytes", peSize)
 	}
@@ -263,7 +245,6 @@ s
 
 	return peBytes, nil
 }
-
 
 func detectFormat(fileData []byte, filePath string) (Format, error) {
 	ext := strings.ToLower(filepath.Ext(filePath))
@@ -286,7 +267,6 @@ func detectFormat(fileData []byte, filePath string) (Format, error) {
 		}
 	}
 
-
 	if isValidPNG(fileData) {
 		return FormatPNG, nil
 	}
@@ -305,13 +285,11 @@ func detectFormat(fileData []byte, filePath string) (Format, error) {
 	return FormatPNG, fmt.Errorf("unsupported file format (supported: PNG, JPEG, MP3, PDF)")
 }
 
-
 func isValidPNG(data []byte) bool {
 	reader := bytes.NewReader(data)
 	_, err := png.Decode(reader)
 	return err == nil
 }
-
 
 func isValidJPEG(data []byte) bool {
 	reader := bytes.NewReader(data)
@@ -319,12 +297,10 @@ func isValidJPEG(data []byte) bool {
 	return err == nil
 }
 
-
 func HasEmbeddedPE(filePath string) bool {
 	_, err := ExtractPEFromFile(filePath)
 	return err == nil
 }
-
 
 func HasEmbeddedPEFromBytes(fileData []byte) bool {
 	_, err := ExtractPEFromBytes(fileData)
@@ -339,7 +315,6 @@ func GetEmbeddedPESize(filePath string) (int, error) {
 	return len(peBytes), nil
 }
 
-
 func ExtractPEFromMP3(mp3Path string) ([]byte, error) {
 	// Open the MP3 file
 	tag, err := id3v2.Open(mp3Path, id3v2.Options{Parse: true})
@@ -347,7 +322,6 @@ func ExtractPEFromMP3(mp3Path string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to open MP3 file: %v", err)
 	}
 	defer tag.Close()
-
 
 	var base64Data string
 	for _, frame := range tag.GetFrames(tag.CommonID("COMM")) {
@@ -361,7 +335,6 @@ func ExtractPEFromMP3(mp3Path string) ([]byte, error) {
 			break
 		}
 	}
-
 
 	if base64Data == "" {
 		for _, frame := range tag.GetFrames(tag.CommonID("TXXX")) {
@@ -381,12 +354,10 @@ func ExtractPEFromMP3(mp3Path string) ([]byte, error) {
 		return nil, fmt.Errorf("no steganography data found in MP3 ID3 tags")
 	}
 
-
 	dataBytes, err := base64.StdEncoding.DecodeString(base64Data)
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode base64 data: %v", err)
 	}
-
 
 	if len(dataBytes) < len(magicHeader)+4 {
 		return nil, fmt.Errorf("insufficient data extracted - no PE found")
@@ -397,16 +368,14 @@ func ExtractPEFromMP3(mp3Path string) ([]byte, error) {
 		return nil, fmt.Errorf("magic header not found - no embedded PE data")
 	}
 
-
-	sizeBytes := dataBytes[len(magicHeader):len(magicHeader)+4]
+	sizeBytes := dataBytes[len(magicHeader) : len(magicHeader)+4]
 	peSize := binary.LittleEndian.Uint32(sizeBytes)
-
 
 	dataStart := len(magicHeader) + 4
 	if len(dataBytes) < dataStart+int(peSize) {
 		return nil, fmt.Errorf("insufficient PE data extracted")
 	}
 
-	peBytes := dataBytes[dataStart:dataStart+int(peSize)]
+	peBytes := dataBytes[dataStart : dataStart+int(peSize)]
 	return peBytes, nil
 }

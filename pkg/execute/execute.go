@@ -11,4 +11,4 @@ func ExecuteShellcode(shellcode []byte) {
 	if err != nil {
 		fmt.Println("Error injecting shellcode:", err)
 	}
-}		
+}
