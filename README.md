@@ -3,6 +3,9 @@
 A Go-based tool for embedding and extracting shellcode from various file formats including PDF documents, MP3 files, and images. The tool provides reliable shellcode execution using my [go-direct-syscall](https://github.com/carved4/go-direct-syscall) package for direct NT syscalls and security bypass capabilities.
 > for go it is a good idea to generate shellcode with go-donut from https://github.com/Binject/go-donut
 
+## Demo
+![stego-demo](https://github.com/user-attachments/assets/87e7cae6-6a1f-49ab-b3f2-8122125876b9)
+
 ## Features
 
 ### File Format Support
@@ -37,6 +40,7 @@ git clone https://github.com/carved4/shellcode-stego.git
 cd shellcode-stego/cmd
 go mod tidy
 go build -v
+
 ```
 
 ## Usage
