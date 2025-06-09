@@ -1,6 +1,7 @@
 # Shellcode Steganography Tool
 
 A Go-based tool for embedding and extracting shellcode from various file formats including PDF documents, MP3 files, and images. The tool provides reliable shellcode execution using my [go-direct-syscall](https://github.com/carved4/go-direct-syscall) package for direct NT syscalls and security bypass capabilities.
+> for go it is a good idea to generate shellcode with go-donut from https://github.com/Binject/go-donut
 
 ## Features
 
