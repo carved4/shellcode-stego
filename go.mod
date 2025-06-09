@@ -6,7 +6,7 @@ toolchain go1.23.10
 
 require (
 	github.com/bogem/id3v2 v1.2.0
-	github.com/carved4/go-direct-syscall v1.1.0
+	github.com/carved4/go-direct-syscall v1.1.5
 	github.com/pdfcpu/pdfcpu v0.11.0
 )
 
